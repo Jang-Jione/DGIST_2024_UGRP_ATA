@@ -78,42 +78,35 @@ def evaluate(model, loader):
             total += labels.size(0)
     return 100 * correct / total
 
-# 9. top loss 모델 저장 함수 정의
-def save_top_loss_models(epoch, train_loss, model, top_model=None):
-    if top_model is None or train_loss < top_model['loss']:
-        model_save_path = f"best_loss_model_epoch_{epoch}.pth"
-        torch.save(model.state_dict(), model_save_path)
-        print(f"Model saved at epoch {epoch} with train loss {train_loss:.4f}")
-        return {"epoch": epoch, "loss": train_loss, "model_path": model_save_path}
-    return top_model
+# 9. 모델 저장 함수
+def save_top_models(epoch, accuracy, model, top_models):
+    model_filename = f"model_epoch_{epoch + 1}_accuracy_{accuracy:.2f}.pth"
+    model_path = os.path.join("top_models", model_filename)
+    top_models.append((accuracy, model_path))
+    top_models = sorted(top_models, key=lambda x: x[0], reverse=True)[:10]
+    torch.save(model.state_dict(), model_path)
+    print("\nTop 10 Models (by accuracy):")
+    for i, (acc, path) in enumerate(top_models, 1):
+        print(f"Rank {i}: Accuracy = {acc:.2f}%, Model Path = {path}")
+    return top_models
 
-# 10. 학습 루프
-top_model = None  # 최상의 모델을 저장할 변수
-for epoch in range(1, num_epochs + 1):
+# 학습 루프
+num_epochs = 100
+for epoch in range(num_epochs):
     model.train()
-    epoch_loss = 0
-    for batch in tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs}"):
-        inputs = {k: v.to(device) for k, v in batch.items() if k != "labels"}
-        labels = batch['labels'].to(device)
-        outputs = model(**inputs)
-        loss = torch.nn.functional.cross_entropy(outputs.logits_per_image, labels)
-        loss.backward()
-        optimizer.step(
+    running_loss = 0.0
+    for batch in train_loader:
         optimizer.zero_grad()
-        epoch_loss += loss.item()
-    
-    avg_train_loss = epoch_loss / len(train_loader)
-    print(f"Epoch {epoch} Train Loss: {avg_train_loss:.4f}")
-    
-    # Train 정확도
-    train_acc = evaluate(model, train_loader)
-    print(f"Train Accuracy: {train_acc:.2f}%")
-    
-    # Test 정확도
-    test_acc = evaluate(model, test_loader)
-    print(f"Test Accuracy: {test_acc:.2f}%")
-    
-    # top loss 모델 저장
-    top_model = save_top_loss_models(epoch, avg_train_loss, model, top_model)
+        inputs = {k: v.to(device) for k, v in batch.items()}
+        outputs = model(**inputs)
+        loss = outputs.loss
+        loss.backward()
+        optimizer.step()
+        running_loss += loss.item()
+
+    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}")
+    test_accuracy = evaluate(model, test_loader)
+    print(f"Test Accuracy after Epoch {epoch+1}: {test_accuracy:.2f}%")
+    top_models = save_top_models(epoch, test_accuracy, model, top_models)
 
 print("Finished Training")
