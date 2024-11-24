@@ -47,7 +47,7 @@ test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False, collate_fn=c
 lora_config = LoraConfig(
     r=8,  # rank of low-rank matrices
     lora_alpha=16,  # scaling factor for LoRA
-    target_modules=["q_proj", "k_proj", "v_proj", "visual_projection"],  # LoRA will be applied to attention projections
+    target_modules=["q_proj", "k_proj", "v_proj", "out_proj"],  # LoRA will be applied to attention projections
     lora_dropout=0.1,  # dropout rate for LoRA layers
     bias="none",  # no bias terms in LoRA layers
 )
