@@ -31,7 +31,7 @@ config = LoraConfig(
     r=8,
     lora_alpha=16,
     lora_dropout=0.1,
-    target_modules=["query", "key", "value"],
+    target_modules=["query", "key", "value", "output"],
     bias ="none"
 )
 
