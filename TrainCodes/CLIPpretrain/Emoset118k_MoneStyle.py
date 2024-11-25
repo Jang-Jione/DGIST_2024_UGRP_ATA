@@ -22,7 +22,7 @@ train_dataset = load_dataset("xodhks/EmoSet118K_MonetStyle", split="train")
 test_dataset = load_dataset("xodhks/Children_Sketch", split="train")
 
 # 3. 레이블을 감정 텍스트로 매핑 (CoT 방식으로)
-possible_labels = ["Happiness", "Sadness", "Disgust", "Fear", "Anger", "Surprise"]
+possible_labels = ["Happiness", "Sadness", "Disgust", "Fear", "Anger", "Surprise"] # 이거 emoset으로 수정하기
 
 # 4. 데이터셋 처리 함수 정의 (CoT 방식 프롬프트 추가)
 def collate_fn(samples):
@@ -30,11 +30,16 @@ def collate_fn(samples):
     labels = [s['label'] for s in samples]
     
     # CoT 방식 프롬프트 작성: 감정을 추론하는 과정
-    prompts = [f"Given this image, what emotion is being expressed? 1. Consider the intent behind the image. 2. Carefully analyze the features of the image. 3. Based on steps 1 and 2, predict the emotion expressed in the image. Possible emotions: 'Happiness', 'Sadness', 'Disgust', 'Fear', 'Anger', 'Surprise'."
-               for _ in samples]  # 이미지마다 추론 프롬프트
+    # prompts = [f"Given this image, what emotion is being expressed? 1. Consider the intent behind the image. 2. Carefully analyze the features of the image. 3. Based on steps 1 and 2, predict the emotion expressed in the image. Possible emotions: 'Happiness', 'Sadness', 'Disgust', 'Fear', 'Anger', 'Surprise'."
+    #            for _ in samples]  # 이미지마다 추론 프롬프트
     
     # Processor에 프롬프트와 이미지를 함께 전달
-    inputs = processor(images=images, text=prompts, return_tensors="pt", padding=True)
+    # inputs = processor(images=images, text=prompts, return_tensors="pt", padding=True)
+    text_inputs = [
+    f"This image likely represents an emotional expression. Considering the visual details and the intention behind the image, it seems to convey a sense of {label}."
+    for label in possible_labels
+]
+    inputs = processor(images=images, text=text_inputs, return_tensors="pt", padding=True)
     inputs['labels'] = torch.tensor(labels)
     return inputs
 
