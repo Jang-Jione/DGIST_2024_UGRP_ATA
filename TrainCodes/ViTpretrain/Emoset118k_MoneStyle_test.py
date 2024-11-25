@@ -151,12 +151,12 @@ def visualize_tsne(embeddings, labels, title, n_labels):
 
 # 9. Train 데이터 시각화 및 Silhouette Score 계산
 train_embeds, train_labels = extract_embeddings(model, train_loader)
-train_tsne = visualize_tsne(train_embeds, train_labels, "t-SNE Visualization of Train Embeddings", n_labels=8)
-train_silhouette_score = calculate_silhouette_score(train_tsne, train_labels, n_clusters=8)
+train_tsne = visualize_tsne(train_embeds, train_labels, "t-SNE Visualization of Train Embeddings", n_labels=6)
+train_silhouette_score = calculate_silhouette_score(train_tsne, train_labels, n_clusters=6)
 print(f"Train Silhouette Score: {train_silhouette_score:.4f}")
 
 # 10. Test 데이터 시각화 및 Silhouette Score 계산
 test_embeds, test_labels = extract_embeddings(model, test_loader)
-test_tsne = visualize_tsne(test_embeds, test_labels, "t-SNE Visualization of Test Embeddings", n_labels=8)
-test_silhouette_score = calculate_silhouette_score(test_tsne, test_labels, n_clusters=8)
+test_tsne = visualize_tsne(test_embeds, test_labels, "t-SNE Visualization of Test Embeddings", n_labels=6)
+test_silhouette_score = calculate_silhouette_score(test_tsne, test_labels, n_clusters=6)
 print(f"Test Silhouette Score: {test_silhouette_score:.4f}")
