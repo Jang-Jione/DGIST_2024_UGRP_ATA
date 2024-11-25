@@ -21,9 +21,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224", use_fast=True)
 model = AutoModelForImageClassification.from_pretrained(
     "google/vit-base-patch16-224",
-    num_labels=8,  # 레이블 개수
+    num_labels=6,  # 레이블 개수
     ignore_mismatched_sizes=True,
 ).to(device)
+
+model_weights_path = hf_hub_download(repo_id="JANGJIWON/EmoSet118K_MonetStyle_student", filename="model_epoch_5_accuracy_43.09.pth")
+model.load_state_dict(torch.load(model_weights_path, map_location='cpu'), strict=False)
 
 # 2. 데이터 전처리 함수
 def preprocess_image(image):
