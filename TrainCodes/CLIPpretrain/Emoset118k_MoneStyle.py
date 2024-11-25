@@ -22,20 +22,19 @@ train_dataset = load_dataset("xodhks/EmoSet118K_MonetStyle", split="train")
 test_dataset = load_dataset("xodhks/Children_Sketch", split="train")
 
 # 3. 레이블을 감정 텍스트로 매핑 (CoT 방식으로)
-possible_labels = [
-    "To identify the emotion in the image, I will start by analyzing the facial expressions and body language. If the image shows a smile, relaxed posture, and joyful atmosphere, it is likely representing Happiness.",
-    "To identify the emotion in the image, I will focus on signs of anger such as furrowed brows, clenched fists, or an aggressive stance. If these signs are prominent, the emotion is most likely Anger.",
-    "To identify the emotion in the image, I will look for signs of surprise, such as wide eyes and an open mouth. If these features are present, the emotion is likely Surprise.",
-    "To identify the emotion in the image, I will observe facial expressions and body language. If the image shows a disgusted look, with scrunched facial features or a turned-away posture, the emotion is most likely Disgust.",
-    "To identify the emotion in the image, I will consider signs of fear such as wide eyes, tense posture, and nervous behavior. If these traits are visible, the emotion is likely Fear.",
-    "To identify the emotion in the image, I will check for signs of sadness, such as downturned eyes or a slumped posture. If these are apparent, the emotion being expressed is likely Sadness."
-]
+possible_labels = ["Happiness", "Sadness", "Disgust", "Fear", "Anger", "Surprise"]
 
-# 4. 데이터셋 처리 함수 정의
+# 4. 데이터셋 처리 함수 정의 (CoT 방식 프롬프트 추가)
 def collate_fn(samples):
     images = [s['image'] for s in samples]
     labels = [s['label'] for s in samples]
-    inputs = processor(images=images, text=possible_labels, return_tensors="pt", padding=True)
+    
+    # CoT 방식 프롬프트 작성: 감정을 추론하는 과정
+    prompts = [f"Given this image, what emotion is being expressed? 1. Consider the intent behind the image. 2. Carefully analyze the features of the image. 3. Based on steps 1 and 2, predict the emotion expressed in the image. Possible emotions: 'Happiness', 'Sadness', 'Disgust', 'Fear', 'Anger', 'Surprise'."
+               for _ in samples]  # 이미지마다 추론 프롬프트
+    
+    # Processor에 프롬프트와 이미지를 함께 전달
+    inputs = processor(images=images, text=prompts, return_tensors="pt", padding=True)
     inputs['labels'] = torch.tensor(labels)
     return inputs
 
@@ -94,15 +93,16 @@ def save_top_models(epoch, accuracy, model, top_models):
 num_epochs = 100
 for epoch in range(num_epochs):
     model.train()
-    running_loss = 0.0
-    for batch in train_loader:
-        optimizer.zero_grad()
-        inputs = {k: v.to(device) for k, v in batch.items()}
+    epoch_loss = 0
+    for batch in tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs}"):
+        inputs = {k: v.to(device) for k, v in batch.items() if k != "labels"}
+        labels = batch['labels'].to(device)
         outputs = model(**inputs)
-        loss = outputs.loss
+        loss = torch.nn.functional.cross_entropy(outputs.logits_per_image, labels)
         loss.backward()
         optimizer.step()
-        running_loss += loss.item()
+        optimizer.zero_grad()
+        epoch_loss += loss.item()
 
     print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}")
     test_accuracy = evaluate(model, test_loader)
