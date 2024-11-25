@@ -89,6 +89,10 @@ def save_top_models(epoch, accuracy, model, top_models):
         print(f"Rank {i}: Accuracy = {acc:.2f}%, Model Path = {path}")
     return top_models
 
+# 모델 저장을 위한 디렉토리 생성
+os.makedirs("top_models", exist_ok=True)
+top_models = []
+
 # 학습 루프
 num_epochs = 100
 for epoch in range(num_epochs):
