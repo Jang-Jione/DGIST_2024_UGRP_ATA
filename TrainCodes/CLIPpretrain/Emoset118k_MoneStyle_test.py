@@ -87,58 +87,6 @@ for epoch in range(1, num_epochs + 1):
     test_acc = evaluate(model, test_loader)
     print(f"Test Accuracy: {test_acc:.2f}%")
 
-# 긍정과 부정 레이블 매핑
-positive_labels = ["Happiness", "Sadness", "Surprise"]
-negative_labels = ["Disgust", "Fear", "Anger"]
-
-positive_indices = [possible_labels.index(label) for label in positive_labels]
-negative_indices = [possible_labels.index(label) for label in negative_labels]
-
-def evaluate_top_k_accuracy(model, loader, k=3):
-    """
-    모델의 Top-K Accuracy를 긍정/부정으로 평가합니다.
-    """
-    model.eval()
-    correct_positive = 0
-    correct_negative = 0
-    total_positive = 0
-    total_negative = 0
-    
-    with torch.no_grad():
-        for batch in loader:
-            inputs = {k: v.to(device) for k, v in batch.items() if k != "labels"}
-            labels = batch['labels'].to(device)
-            outputs = model(**inputs)
-            logits = outputs.logits_per_image  # 이미지-텍스트 유사도
-            
-            # Top-K 예측
-            top_k_preds = torch.topk(logits, k=k, dim=1).indices
-            
-            # 레이블의 긍정/부정 분류
-            for i, label in enumerate(labels):
-                if label in positive_indices:
-                    total_positive += 1
-                    if any(pred in positive_indices for pred in top_k_preds[i]):
-                        correct_positive += 1
-                elif label in negative_indices:
-                    total_negative += 1
-                    if any(pred in negative_indices for pred in top_k_preds[i]):
-                        correct_negative += 1
-    
-    positive_accuracy = 100 * correct_positive / total_positive if total_positive > 0 else 0
-    negative_accuracy = 100 * correct_negative / total_negative if total_negative > 0 else 0
-    return positive_accuracy, negative_accuracy
-
-# Train 데이터에서 Top-3 Accuracy 평가
-train_positive_acc, train_negative_acc = evaluate_top_k_accuracy(model, train_loader, k=3)
-print(f"Train Data Top-3 Positive Accuracy: {train_positive_acc:.2f}%")
-print(f"Train Data Top-3 Negative Accuracy: {train_negative_acc:.2f}%")
-
-# Test 데이터에서 Top-3 Accuracy 평가
-test_positive_acc, test_negative_acc = evaluate_top_k_accuracy(model, test_loader, k=3)
-print(f"Test Data Top-3 Positive Accuracy: {test_positive_acc:.2f}%")
-print(f"Test Data Top-3 Negative Accuracy: {test_negative_acc:.2f}%")
-
 # 8. t-SNE 시각화를 위한 임베딩 추출
 def extract_embeddings(model, loader):
     model.eval()
