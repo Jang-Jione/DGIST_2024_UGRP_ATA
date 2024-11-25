@@ -104,7 +104,7 @@ for epoch in range(num_epochs):
         optimizer.zero_grad()
         epoch_loss += loss.item()
 
-    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}")
+    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss/len(train_loader):.4f}")
     test_accuracy = evaluate(model, test_loader)
     print(f"Test Accuracy after Epoch {epoch+1}: {test_accuracy:.2f}%")
     top_models = save_top_models(epoch, test_accuracy, model, top_models)
