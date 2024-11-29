@@ -56,14 +56,17 @@ class CustomDataset(Dataset):
         return {"pixel_values": img, "labels": torch.tensor(label, dtype=torch.long)}
 
 # 4. 데이터셋 로드 및 분리
-dataset = load_dataset("JANGJIWON/UGRP_sketchset_textbook", split="train")
-dataset_list = [dict(item) for item in dataset]
-train_data, test_data = train_test_split(dataset_list, test_size=0.3, random_state=42)
+dataset = load_dataset("JANGJIWON/UGRP_sketchset_textbook")
+split_dataset = dataset["train"].train_test_split(test_size=0.8, seed=42)  # 80% train, 20% test
+train_data = split_dataset["train"]
+test_data = split_dataset["test"]
 
 train_dataset = CustomDataset(train_data, transform=preprocess_image)
 test_dataset = CustomDataset(test_data, transform=preprocess_image)
 
-train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=2)
+from torch.utils.data import DataLoader, RandomSampler
+
+train_loader = DataLoader(train_dataset, batch_size=16, sampler=RandomSampler(train_dataset, generator=torch.Generator().manual_seed(42)), num_workers=2)
 test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=2)
 
 # 5. 학습 설정
@@ -86,7 +89,7 @@ def evaluate(model, loader):
     return 100 * correct / total
 
 # 7. 학습 루프
-num_epochs = 5
+num_epochs = 10
 for epoch in range(1, num_epochs + 1):
     model.train()
     epoch_loss = 0
