@@ -40,6 +40,13 @@ def collate_fn(samples):
 train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, collate_fn=collate_fn)
 test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False, collate_fn=collate_fn)
 
+# from torch.utils.data import DataLoader, RandomSampler
+
+# # RandomSampler에 seed를 고정
+# train_loader = DataLoader(train_dataset, batch_size=8, 
+#                           sampler=RandomSampler(train_dataset, generator=torch.Generator().manual_seed(42)),
+#                           collate_fn=collate_fn)
+
 # 5. 학습 설정
 optimizer = AdamW(model.parameters(), lr=5e-5)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
