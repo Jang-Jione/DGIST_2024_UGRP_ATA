@@ -1,51 +1,27 @@
-import torch
-import os
+from huggingface_hub import hf_hub_download
 from transformers import CLIPProcessor, CLIPModel
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
-import torch.nn as nn
-from peft import get_peft_model, LoraConfig, TaskType
-from tqdm import tqdm  # tqdm를 사용해 진행 상태를 시각화
+import torch
+from PIL import Image
+import tqdm
+import os
+from peft import LoraConfig, get_peft_model
 
-# GPU 설정
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print("Device:", device)
 
-# 1. 모델 및 프로세서 로드
-model_name = "openai/clip-vit-base-patch32"
-model = CLIPModel.from_pretrained(model_name)
-processor = CLIPProcessor.from_pretrained(model_name)
+# Create directory for saving models
+os.makedirs("top_models", exist_ok=True)
 
-# 2. 데이터셋 로드 및 분리
-train_dataset = load_dataset("xodhks/crawling-emotions-in-google-train", split="train")
-test_dataset = load_dataset("xodhks/crawling-emotions-in-google-test", split="train")
+# 1. Model and processor loading
+model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
-# 3. 레이블을 감정 텍스트로 매핑 (CoT 방식으로)
-possible_labels = ["Happiness", "Sadness", "Disgust", "Fear", "Anger", "Surprise"] # 이거 emoset으로 수정하기
-
-# 4. 데이터셋 처리 함수 정의 (CoT 방식 프롬프트 추가)
-def collate_fn(samples):
-    images = [s['image'] for s in samples]
-    labels = [s['label'] for s in samples]
-    
-    # CoT 방식 프롬프트 작성: 감정을 추론하는 과정
-    # prompts = [f"Given this image, what emotion is being expressed? 1. Consider the intent behind the image. 2. Carefully analyze the features of the image. 3. Based on steps 1 and 2, predict the emotion expressed in the image. Possible emotions: 'Happiness', 'Sadness', 'Disgust', 'Fear', 'Anger', 'Surprise'."
-    #            for _ in samples]  # 이미지마다 추론 프롬프트
-    
-    # Processor에 프롬프트와 이미지를 함께 전달
-    # inputs = processor(images=images, text=prompts, return_tensors="pt", padding=True)
-    text_inputs = [
-    f"This image likely represents an emotional expression. Considering the visual details and the intention behind the image, it seems to convey a sense of {label}."
-    for label in possible_labels
-]
-    inputs = processor(images=images, text=text_inputs, return_tensors="pt", padding=True)
-    inputs['labels'] = torch.tensor(labels)
-    return inputs
-
-# DataLoader 설정
-train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, collate_fn=collate_fn)
-test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False, collate_fn=collate_fn)
+# model_weights_path = hf_hub_download(
+#     repo_id="JANGJIWON/EmoSet118K_MonetStyle_CLIP_student",
+#     filename="CLIPEmoset118k_mone.pth"
+# )
+# model.load_state_dict(torch.load(model_weights_path, map_location='cpu', weights_only=True), strict=False)
 
 # 5. LoRA 설정
 lora_config = LoraConfig(
@@ -56,67 +32,204 @@ lora_config = LoraConfig(
     bias="none",  # no bias terms in LoRA layers
 )
 
-# 6. LoRA 적용 모델 준비
+# Apply LoRA to the model
 model = get_peft_model(model, lora_config)
 
-# 7. 학습 설정
-optimizer = AdamW(model.parameters(), lr=5e-5)
+# 2. Dataset loading
+train_dataset = load_dataset("xodhks/EmoSet118K", split="train")
+test_dataset = load_dataset("xodhks/ugrp-survey-test")
 
+# 3. Label mapping
+possible_labels = ["Happiness", "Anger", "Surprise", "Disgust", "Fear", "Sadness"]
+
+# 4. Device setup
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
-num_epochs = 100
+# 5. Modified collate function
+def collate_fn(batch):
+    images = [item['image'] for item in batch]
+    labels = [item['label'] for item in batch]
 
-# 8. 평가 함수
-def evaluate(model, loader):
-    model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for batch in loader:
-            inputs = {k: v.to(device) for k, v in batch.items() if k != "labels"}
-            labels = batch['labels'].to(device)
-            outputs = model(**inputs)
-            logits = outputs.logits_per_image  # 이미지-텍스트 유사도
-            preds = logits.argmax(dim=1)
-            logits_per_image = outputs.logits_per_image
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
-    return 100 * correct / total
+    # Convert labels to text
+    label_texts = [possible_labels[label] if isinstance(label, int) else label for label in labels]
 
-# 9. 모델 저장 함수
+    # Process inputs
+    inputs = processor(
+        images=images,
+        text=label_texts,
+        return_tensors="pt",
+        padding=True
+    )
+
+    # Store original labels for loss calculation
+    inputs['original_labels'] = torch.tensor([possible_labels.index(text) for text in label_texts])
+
+    return inputs
+
+# 6. DataLoader setup
+train_dataloader = DataLoader(
+    train_dataset,
+    batch_size=16,
+    collate_fn=collate_fn,
+    shuffle=True
+)
+
+# 7. Optimizer setup
+optimizer = AdamW(model.parameters(), lr=1e-5)
+
+# 8. Loss function
+def compute_loss(logits_per_image, labels):
+    # 대칭적 교차 엔트로피 손실
+    batch_size = logits_per_image.size(0)
+    targets = torch.arange(batch_size).to(logits_per_image.device)
+
+    # 이미지-텍스트 간 대칭 손실
+    loss_i = torch.nn.functional.cross_entropy(logits_per_image, targets)
+    loss_t = torch.nn.functional.cross_entropy(logits_per_image.t(), targets)
+
+    return (loss_i + loss_t) / 2
+
+# 9. Model saving function
 def save_top_models(epoch, accuracy, model, top_models):
     model_filename = f"model_epoch_{epoch + 1}_accuracy_{accuracy:.2f}.pth"
     model_path = os.path.join("top_models", model_filename)
+
+    # Add new model to top_models list
     top_models.append((accuracy, model_path))
     top_models = sorted(top_models, key=lambda x: x[0], reverse=True)[:10]
-    torch.save(model.state_dict(), model_path)
-    print("\nTop 10 Models (by accuracy):")
-    for i, (acc, path) in enumerate(top_models, 1):
-        print(f"Rank {i}: Accuracy = {acc:.2f}%, Model Path = {path}")
+
+    # Only save if model is in top 10
+    if (accuracy, model_path) in top_models:
+        torch.save(model.state_dict(), model_path)
+        print("\nTop 10 Models (by accuracy):")
+        for i, (acc, path) in enumerate(top_models, 1):
+            print(f"Rank {i}: Accuracy = {acc:.2f}%, Model Path = {path}")
+
     return top_models
 
-# 모델 저장을 위한 디렉토리 생성
-os.makedirs("top_models", exist_ok=True)
-top_models = []
-
-# 학습 루프
-num_epochs = 100
-for epoch in range(num_epochs):
+# 10. Training function (refactored)
+# 10. Training function (refactored with incorrect examples logging)
+def train(model, dataloader, optimizer, epochs=100):
     model.train()
-    epoch_loss = 0
-    for batch in tqdm(train_loader, desc=f"Epoch {epoch}/{num_epochs}"):
-        inputs = {k: v.to(device) for k, v in batch.items() if k != "labels"}
-        labels = batch['labels'].to(device)
-        outputs = model(**inputs)
-        loss = torch.nn.functional.cross_entropy(outputs.logits_per_image, labels)
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-        epoch_loss += loss.item()
+    top_models = []
+    best_accuracy = 0
 
-    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss/len(train_loader):.4f}")
-    test_accuracy = evaluate(model, test_loader)
-    print(f"Test Accuracy after Epoch {epoch+1}: {test_accuracy:.2f}%")
-    top_models = save_top_models(epoch, test_accuracy, model, top_models)
+    # Process the training loop
+    for epoch in range(epochs):
+        correct_predictions = 0
+        total_predictions = 0
+        total_loss = 0
+        incorrect_examples = []  # 잘못 분류된 예시를 저장할 리스트
+        progress_bar = tqdm.tqdm(dataloader, desc=f"Epoch {epoch+1}/{epochs}")
 
-print("Finished Training")
+        for batch in progress_bar:
+            inputs = {k: v.to(device) for k, v in batch.items() if k != 'original_labels'}
+            labels = batch['original_labels'].to(device)
+
+            # Forward pass
+            optimizer.zero_grad()
+            outputs = model(**inputs)
+            logits_per_image = outputs.logits_per_image
+
+            # Calculate probabilities and predictions
+            probs = logits_per_image.softmax(dim=1)
+            predictions = probs.argmax(dim=1)
+
+            # Update accuracy
+            correct_predictions += (predictions == labels).sum().item()
+            total_predictions += labels.size(0)
+
+            # Calculate loss
+            loss = compute_loss(logits_per_image, labels)
+            total_loss += loss.item()
+
+            # Track incorrect examples
+            for i in range(len(predictions)):
+                if predictions[i] != labels[i]:  # 잘못 분류된 경우
+                    incorrect_examples.append((inputs['pixel_values'][i], predictions[i].item(), labels[i].item()))
+
+            # Backpropagation
+            loss.backward()
+            optimizer.step()
+
+            # Update progress bar with loss and accuracy
+            current_accuracy = (correct_predictions / total_predictions) * 100
+            progress_bar.set_postfix({
+                'loss': f'{total_loss/(progress_bar.n+1):.4f}',
+                'accuracy': f'{current_accuracy:.2f}%'
+            })
+
+        # Epoch summary
+        epoch_accuracy = (correct_predictions / total_predictions) * 100
+        print(f"\nEpoch {epoch+1} Summary:")
+        print(f"Average Loss: {total_loss/len(dataloader):.4f}")
+        print(f"Train Accuracy: {epoch_accuracy:.2f}%")
+
+        # Evaluate the model on test dataset after each epoch
+        test_accuracy = evaluate(model, test_dataset, processor, possible_labels, device)
+        print(f"Test Accuracy after Epoch {epoch+1}: {test_accuracy:.2f}%")
+
+        # Save top models
+        top_models = save_top_models(epoch, test_accuracy, model, top_models)
+        print("-" * 50)
+
+    return top_models
+
+# 11. Evaluation function
+def evaluate(model, dataset, processor, possible_labels, device):
+    model.eval()
+    correct_predictions = 0
+    total = 0
+
+    # 텍스트 프롬프트 생성
+    text_inputs = [f"This image represents {l} emotion." for l in possible_labels]
+
+    test_dataset = dataset['train']
+    progress_bar = tqdm.tqdm(test_dataset, desc="Evaluating")
+
+    for item in progress_bar:
+        image = item['image']
+        label = item['label']
+
+        # Convert label to text if needed
+        true_label = possible_labels[label] if isinstance(label, int) else label
+
+        # Prepare inputs
+        inputs = processor(
+            images=image,
+            text=text_inputs,  # 추가된 부분: 텍스트 프롬프트 사용
+            return_tensors="pt",
+            padding=True
+        )
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        # Get prediction
+        with torch.no_grad():
+            outputs = model(**inputs)
+            logits = outputs.logits_per_image
+            probs = logits.softmax(dim=1)
+            predicted_label = possible_labels[probs.argmax().item()]
+
+        if predicted_label == true_label:
+            correct_predictions += 1
+        total += 1
+
+        # Update progress bar
+        progress_bar.set_postfix({'accuracy': f'{(correct_predictions/total)*100:.2f}%'})
+
+    final_accuracy = (correct_predictions / total) * 100
+    return final_accuracy
+
+# 12. Main execution
+print("Starting training...")
+top_models = train(model, train_dataloader, optimizer, epochs=100)
+
+print("\nEvaluating final model...")
+test_accuracy = evaluate(model, test_dataset, processor, possible_labels, device)
+print(f"Final Test Accuracy: {test_accuracy:.2f}%")
+
+# Print final top 10 models
+print("\nFinal Top 10 Models:")
+for i, (acc, path) in enumerate(top_models, 1):
+    print(f"Rank {i}: Accuracy = {acc:.2f}%, Model Path = {path}")
