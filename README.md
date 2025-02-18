@@ -1,6 +1,9 @@
 # DGIST 2024 UGRP
 ### 심리치료를 위한 그림 속 감정 탐구: 감정-스케치 데이터 셋 구축 및 PEFT 기반 AI 접근법
 
+![image](https://github.com/user-attachments/assets/b7228a8c-e708-4f1e-85f2-977e08b565e4)
+
+
 **Report** <br>
 https://drive.google.com/file/d/1ib9129FqS4wVjIXBga57MwSVWeLdU6V6/view?usp=drive_link <br>
 <br>
